@@ -1,7 +1,14 @@
 import React, { useCallback, useState } from 'react';
-import { Alert, SafeAreaView, StyleSheet, Text, TouchableOpacity, View, FlatList } from 'react-native';
+import {
+  Alert,
+  FlatList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { SafeAreaView as SafeArea } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 
 type WindowItem = {
@@ -16,23 +23,94 @@ type WindowItem = {
 export default function NearbyWindowsScreen() {
   const [windows, setWindows] = useState<WindowItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const loadWindows = async () => {
-    setLoading(true);
-
-    const { data, error } = await supabase
-      .from('windows')
-      .select('id, sport, venue, time_label, time_detail, notes')
-      .order('created_at', { ascending: false });
-
-    setLoading(false);
-
-    if (error) {
-      Alert.alert('Load failed', error.message);
+    if (!supabase) {
+      Alert.alert('Config error', 'Supabase environment variables are missing.');
       return;
     }
 
-    setWindows(data ?? []);
+    try {
+      setLoading(true);
+
+      const { data, error } = await supabase
+        .from('windows')
+        .select('id, sport, venue, time_label, time_detail, notes')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        Alert.alert('Load failed', error.message);
+        return;
+      }
+
+      setWindows(data ?? []);
+    } catch (err) {
+      console.error('loadWindows error:', err);
+      Alert.alert('Load failed', 'Something went wrong loading windows.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleJoin = async (windowId: string) => {
+    if (!supabase) {
+      Alert.alert('Config error', 'Supabase environment variables are missing.');
+      return;
+    }
+
+    try {
+      setBusyId(windowId);
+
+      const { error } = await supabase.from('window_responses').insert([
+        {
+          window_id: windowId,
+          status: 'join',
+        },
+      ]);
+
+      if (error) {
+        Alert.alert('Join failed', error.message);
+        return;
+      }
+
+      Alert.alert('Joined', 'You joined this window.');
+    } catch (err) {
+      console.error('handleJoin error:', err);
+      Alert.alert('Join failed', 'Something went wrong while joining.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handlePass = async (windowId: string) => {
+    if (!supabase) {
+      Alert.alert('Config error', 'Supabase environment variables are missing.');
+      return;
+    }
+
+    try {
+      setBusyId(windowId);
+
+      const { error } = await supabase.from('window_responses').insert([
+        {
+          window_id: windowId,
+          status: 'pass',
+        },
+      ]);
+
+      if (error) {
+        Alert.alert('Pass failed', error.message);
+        return;
+      }
+
+      setWindows((current) => current.filter((item) => item.id !== windowId));
+    } catch (err) {
+      console.error('handlePass error:', err);
+      Alert.alert('Pass failed', 'Something went wrong while passing.');
+    } finally {
+      setBusyId(null);
+    }
   };
 
   useFocusEffect(
@@ -42,10 +120,10 @@ export default function NearbyWindowsScreen() {
   );
 
   return (
-    <SafeArea style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <Text style={styles.heading}>Nearby invitations</Text>
       <Text style={styles.subheading}>
-        These are now loading from Supabase.
+        Browse local activity windows and respond.
       </Text>
 
       <FlatList
@@ -54,34 +132,50 @@ export default function NearbyWindowsScreen() {
         contentContainerStyle={{ paddingBottom: 24 }}
         ListEmptyComponent={
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>{loading ? 'Loading...' : 'No windows yet'}</Text>
+            <Text style={styles.emptyTitle}>
+              {loading ? 'Loading...' : 'No windows yet'}
+            </Text>
             <Text style={styles.emptyText}>
               Create your first activity window from the Open Window screen.
             </Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <Text style={styles.sport}>{item.sport}</Text>
-            <Text style={styles.detail}>{item.venue}</Text>
-            <Text style={styles.detail}>
-              {item.time_label} · {item.time_detail}
-            </Text>
-            {!!item.notes && <Text style={styles.note}>{item.notes}</Text>}
+        renderItem={({ item }) => {
+          const isBusy = busyId === item.id;
 
-            <View style={styles.actions}>
-              <TouchableOpacity style={styles.joinButton}>
-                <Text style={styles.joinButtonText}>Join</Text>
-              </TouchableOpacity>
+          return (
+            <View style={styles.card}>
+              <Text style={styles.sport}>{item.sport}</Text>
+              <Text style={styles.detail}>{item.venue}</Text>
+              <Text style={styles.detail}>
+                {item.time_label} · {item.time_detail}
+              </Text>
+              {!!item.notes && <Text style={styles.note}>{item.notes}</Text>}
 
-              <TouchableOpacity style={styles.passButton}>
-                <Text style={styles.passButtonText}>Pass</Text>
-              </TouchableOpacity>
+              <View style={styles.actions}>
+                <TouchableOpacity
+                  style={[styles.joinButton, isBusy && styles.disabledButton]}
+                  onPress={() => handleJoin(item.id)}
+                  disabled={isBusy}
+                >
+                  <Text style={styles.joinButtonText}>
+                    {isBusy ? 'Working...' : 'Join'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.passButton, isBusy && styles.disabledButton]}
+                  onPress={() => handlePass(item.id)}
+                  disabled={isBusy}
+                >
+                  <Text style={styles.passButtonText}>Pass</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        )}
+          );
+        }}
       />
-    </SafeArea>
+    </SafeAreaView>
   );
 }
 
@@ -175,5 +269,8 @@ const styles = StyleSheet.create({
   passButtonText: {
     color: '#111827',
     fontWeight: '700',
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
 });
