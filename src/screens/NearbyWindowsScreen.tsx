@@ -9,7 +9,9 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
+import { distanceKmBetween } from '../lib/location';
 
 type WindowItem = {
   id: string;
@@ -18,12 +20,17 @@ type WindowItem = {
   time_label: string;
   time_detail: string;
   notes: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
+
+const DEFAULT_RADIUS_KM = 24; // ~15 miles
 
 export default function NearbyWindowsScreen() {
   const [windows, setWindows] = useState<WindowItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [locationHint, setLocationHint] = useState('');
 
   const loadWindows = async () => {
     if (!supabase) {
@@ -34,17 +41,75 @@ export default function NearbyWindowsScreen() {
     try {
       setLoading(true);
 
-      const { data, error } = await supabase
-        .from('windows')
-        .select('id, sport, venue, time_label, time_detail, notes')
-        .order('created_at', { ascending: false });
+      const userLocationPermission =
+        await Location.requestForegroundPermissionsAsync();
+      const canUseLocation = userLocationPermission.status === 'granted';
+      const userLocation = canUseLocation
+        ? await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          })
+        : null;
+
+      let data: WindowItem[] | null = null;
+      let error: Error | null = null;
+
+      {
+        const result = await supabase
+          .from('windows')
+          .select(
+            'id, sport, venue, time_label, time_detail, notes, latitude, longitude'
+          )
+          .order('created_at', { ascending: false });
+        data = result.data as WindowItem[] | null;
+        error = result.error;
+      }
+
+      if (
+        error &&
+        (error.message.includes('latitude') || error.message.includes('longitude'))
+      ) {
+        const fallbackResult = await supabase
+          .from('windows')
+          .select('id, sport, venue, time_label, time_detail, notes')
+          .order('created_at', { ascending: false });
+
+        data = fallbackResult.data as WindowItem[] | null;
+        error = fallbackResult.error;
+      }
 
       if (error) {
         Alert.alert('Load failed', error.message);
         return;
       }
 
-      setWindows(data ?? []);
+      const allWindows = data ?? [];
+
+      if (!userLocation || !canUseLocation) {
+        setLocationHint('Enable location to filter windows near you.');
+        setWindows(allWindows);
+        return;
+      }
+
+      const filteredWindows = allWindows.filter((windowItem) => {
+        if (
+          typeof windowItem.latitude !== 'number' ||
+          typeof windowItem.longitude !== 'number'
+        ) {
+          return true;
+        }
+
+        const distanceFromUserKm = distanceKmBetween(
+          userLocation.coords.latitude,
+          userLocation.coords.longitude,
+          windowItem.latitude,
+          windowItem.longitude
+        );
+
+        return distanceFromUserKm <= DEFAULT_RADIUS_KM;
+      });
+
+      setLocationHint('Showing windows within ~15 miles of your location.');
+      setWindows(filteredWindows);
     } catch (err) {
       console.error('loadWindows error:', err);
       Alert.alert('Load failed', 'Something went wrong loading windows.');
@@ -125,6 +190,7 @@ export default function NearbyWindowsScreen() {
       <Text style={styles.subheading}>
         Browse local activity windows and respond.
       </Text>
+      {!!locationHint && <Text style={styles.locationHint}>{locationHint}</Text>}
 
       <FlatList
         data={windows}
@@ -195,7 +261,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     color: '#4B5563',
-    marginBottom: 20,
+    marginBottom: 10,
+  },
+  locationHint: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#6B7280',
+    marginBottom: 16,
   },
   emptyCard: {
     backgroundColor: '#FFFFFF',
