@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import * as Location from 'expo-location';
 import { RootStackParamList } from '../types/navigation';
 import { COLORS } from '../constants/colors';
 import { supabase } from '../lib/supabase';
@@ -51,22 +52,56 @@ export default function OpenWindowScreen({ navigation }: Props) {
     try {
       setSaving(true);
 
-      const { error } = await supabase.from('windows').insert([
-        {
-          sport: sport.trim(),
-          venue: venue.trim(),
-          time_label: timeLabel.trim(),
-          time_detail: timeDetail.trim(),
-          notes: notes.trim() ? notes.trim() : null,
-        },
-      ]);
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      const locationAllowed = status === 'granted';
+      const location = locationAllowed
+        ? await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          })
+        : null;
+
+      const payload = {
+        sport: sport.trim(),
+        venue: venue.trim(),
+        time_label: timeLabel.trim(),
+        time_detail: timeDetail.trim(),
+        notes: notes.trim() ? notes.trim() : null,
+      };
+
+      const payloadWithCoords = location
+        ? {
+            ...payload,
+            latitude: Number(location.coords.latitude.toFixed(3)),
+            longitude: Number(location.coords.longitude.toFixed(3)),
+          }
+        : payload;
+
+      let { error } = await supabase.from('windows').insert([payloadWithCoords]);
+
+      if (
+        error &&
+        location &&
+        (error.message.includes('latitude') || error.message.includes('longitude'))
+      ) {
+        console.warn(
+          'Location columns missing on windows table, retrying without coordinates.'
+        );
+        ({ error } = await supabase.from('windows').insert([payload]));
+      }
 
       if (error) {
         Alert.alert('Could not create window', error.message);
         return;
       }
 
-      Alert.alert('Success', 'Your window is now live.');
+      if (!locationAllowed) {
+        Alert.alert(
+          'Success',
+          'Your window is now live. Enable location to improve nearby matching.'
+        );
+      } else {
+        Alert.alert('Success', 'Your window is now live.');
+      }
       resetForm();
       navigation.navigate('NearbyWindows');
     } catch (err) {
