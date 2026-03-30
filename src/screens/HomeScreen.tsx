@@ -1,173 +1,42 @@
-import React, { useCallback, useState } from 'react';
-import {
-  Alert,
-  FlatList,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import React from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { supabase } from '../lib/supabase';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../types/navigation';
+import { COLORS } from '../constants/colors';
 
-type WindowItem = {
-  id: string;
-  sport: string;
-  venue: string;
-  time_label: string;
-  time_detail: string;
-  notes: string | null;
-};
+type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
-export default function NearbyWindowsScreen() {
-  const [windows, setWindows] = useState<WindowItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [joiningId, setJoiningId] = useState<string | null>(null);
-
-  const loadWindows = async () => {
-    try {
-      setLoading(true);
-
-      const { data, error } = await supabase!
-        .from('windows')
-        .select('id, sport, venue, time_label, time_detail, notes')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        Alert.alert('Load failed', error.message);
-        return;
-      }
-
-  setWindows(data ?? []);
-} catch (err: unknown) {
-  let message = 'Something went wrong loading windows.';
-
-  if (err instanceof Error) {
-    message = err.message;
-    console.error('loadWindows error:', err.message, err.stack);
-  } else {
-    console.error('loadWindows unknown error:', err);
-  }
-
-  Alert.alert('Load failed', message);
-} finally {
-  setLoading(false);
-}
-};
-
-  const handleJoin = async (windowId: string) => {
-    try {
-      setJoiningId(windowId);
-
-      const { error } = await supabase!.from('window_responses').insert([
-        {
-          window_id: windowId,
-          status: 'join',
-        },
-      ]);
-
-      if (error) {
-        Alert.alert('Join failed', error.message);
-        return;
-      }
-
-      Alert.alert('Joined', 'You joined this window.');
-    } catch (err) {
-      console.error(err);
-      Alert.alert('Join failed', 'Something went wrong while joining.');
-    } finally {
-      setJoiningId(null);
-    }
-  };
-
-  const handlePass = async (windowId: string) => {
-    try {
-      setJoiningId(windowId);
-
-      const { error } = await supabase!.from('window_responses').insert([
-        {
-          window_id: windowId,
-          status: 'pass',
-        },
-      ]);
-
-      if (error) {
-        Alert.alert('Pass failed', error.message);
-        return;
-      }
-
-      setWindows((current) => current.filter((item) => item.id !== windowId));
-    } catch (err) {
-      console.error(err);
-      Alert.alert('Pass failed', 'Something went wrong while passing.');
-    } finally {
-      setJoiningId(null);
-    }
-  };
-
-  useFocusEffect(
-    useCallback(() => {
-      loadWindows();
-    }, [])
-  );
-
+export default function HomeScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.heading}>Nearby invitations</Text>
-      <Text style={styles.subheading}>
-        Browse local activity windows and respond.
-      </Text>
+      <View style={styles.content}>
+        <Text style={styles.title}>PlayWindow</Text>
+        <Text style={styles.subtitle}>
+          Open a local activity invite or browse nearby windows.
+        </Text>
 
-      <FlatList
-        data={windows}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingBottom: 24 }}
-        ListEmptyComponent={
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>
-              {loading ? 'Loading...' : 'No windows yet'}
-            </Text>
-            <Text style={styles.emptyText}>
-              Create your first activity window from the Open Window screen.
-            </Text>
-          </View>
-        }
-        renderItem={({ item }) => {
-          const isJoining = joiningId === item.id;
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Get started</Text>
+          <Text style={styles.cardText}>
+            Choose one of the options below to continue.
+          </Text>
 
-          return (
-            <View style={styles.card}>
-              <Text style={styles.sport}>{item.sport}</Text>
-              <Text style={styles.detail}>{item.venue}</Text>
-              <Text style={styles.detail}>
-                {item.time_label} · {item.time_detail}
-              </Text>
-              {!!item.notes && <Text style={styles.note}>{item.notes}</Text>}
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => navigation.navigate('OpenWindow')}
+          >
+            <Text style={styles.primaryButtonText}>Open a Window</Text>
+          </TouchableOpacity>
 
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  style={[styles.joinButton, isJoining && styles.disabledButton]}
-                  onPress={() => handleJoin(item.id)}
-                  disabled={isJoining}
-                >
-                  <Text style={styles.joinButtonText}>
-                    {isJoining ? 'Joining...' : 'Join'}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.passButton, isJoining && styles.disabledButton]}
-                  onPress={() => handlePass(item.id)}
-                  disabled={isJoining}
-                >
-                  <Text style={styles.passButtonText}>Pass</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          );
-        }}
-      />
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => navigation.navigate('NearbyWindows')}
+          >
+            <Text style={styles.secondaryButtonText}>Browse Invitations</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     </SafeAreaView>
   );
 }
@@ -175,95 +44,65 @@ export default function NearbyWindowsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F7F8FA',
+    backgroundColor: COLORS.background,
+  },
+  content: {
+    flex: 1,
     padding: 20,
+    justifyContent: 'center',
   },
-  heading: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 8,
+  title: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: COLORS.text,
+    marginBottom: 10,
   },
-  subheading: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#4B5563',
-    marginBottom: 20,
+  subtitle: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: COLORS.mutedText,
+    marginBottom: 24,
   },
-  emptyCard: {
-    backgroundColor: '#FFFFFF',
+  card: {
+    backgroundColor: COLORS.card,
     borderRadius: 18,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: COLORS.border,
   },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 6,
-  },
-  emptyText: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: '#4B5563',
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 18,
-    marginBottom: 14,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
-  sport: {
+  cardTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#111827',
+    color: COLORS.text,
     marginBottom: 8,
   },
-  detail: {
-    fontSize: 15,
-    color: '#374151',
-    marginBottom: 4,
-  },
-  note: {
+  cardText: {
     fontSize: 14,
-    color: '#6B7280',
-    marginTop: 6,
-    marginBottom: 14,
+    lineHeight: 21,
+    color: COLORS.text,
+    marginBottom: 18,
   },
-  actions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 8,
-  },
-  joinButton: {
-    flex: 1,
-    backgroundColor: '#111827',
-    borderRadius: 12,
-    paddingVertical: 14,
+  primaryButton: {
+    backgroundColor: COLORS.fill,
+    borderRadius: 14,
+    paddingVertical: 16,
     alignItems: 'center',
+    marginBottom: 12,
   },
-  joinButtonText: {
-    color: '#FFFFFF',
+  primaryButtonText: {
+    color: COLORS.text,
+    fontSize: 16,
     fontWeight: '700',
   },
-  passButton: {
-    flex: 1,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 12,
-    paddingVertical: 14,
+  secondaryButton: {
+    backgroundColor: COLORS.highlight,
+    borderRadius: 14,
+    paddingVertical: 16,
     alignItems: 'center',
   },
-  passButtonText: {
-    color: '#111827',
+  secondaryButtonText: {
+    color: COLORS.text,
+    fontSize: 16,
     fontWeight: '700',
-  },
-  disabledButton: {
-    opacity: 0.6,
   },
 });
